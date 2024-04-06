@@ -1,30 +1,67 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
+import {
+  Injectable,
+  Signal,
+  WritableSignal,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { randText } from '@ngneat/falso';
-import { catchError, throwError } from 'rxjs';
+import {
+  Subject,
+  catchError,
+  map,
+  merge,
+  startWith,
+  switchMap,
+  tap,
+  throwError,
+} from 'rxjs';
 import { Todo } from './app.component';
 
 @Injectable({
   providedIn: 'root',
 })
 export class AppService {
+  private todosUrl = 'https://jsonplaceholder.typicode.com/todos';
   private http = inject(HttpClient);
 
-  getTodos() {
-    return this.http
-      .get<Todo[]>('https://jsonplaceholder.typicode.com/todos')
-      .pipe(catchError(this.handleError));
-  }
+  todoUpdatedSubject$$ = new Subject<Todo>();
+  todoDeletedSubject$$ = new Subject<Todo>();
 
-  updateTodo(todo: Todo) {
+  todos: WritableSignal<Todo[]> = signal([]);
+  todosSignal: Signal<Todo[]> = computed(() => this.todos());
+
+  readonly todos$ = this.http.get<Todo[]>(`${this.todosUrl}`).pipe(
+    tap((todos) => this.todos.set(todos)),
+    catchError(this.handleError),
+  );
+
+  private todoUpdated$ = this.todoUpdatedSubject$$.pipe(
+    switchMap((todo) => this.updateTodo(todo)),
+  );
+
+  private todoDeleted$ = this.todoDeletedSubject$$.pipe(
+    switchMap((todo) => this.deleteTodo(todo)),
+  );
+
+  todoEvents$ = merge(this.todos$, this.todoUpdated$, this.todoDeleted$);
+
+  todoList$ = this.todoEvents$.pipe(
+    startWith(null),
+    tap(() => console.log('Here is where I would refetch the todos')),
+  );
+
+  updateTodo(updateTodo: Todo) {
     return this.http
       .put<Todo>(
-        `https://jsonplaceholder.typicode.com/todos/${todo.id}`,
+        `${this.todosUrl}/${updateTodo.id}`,
         JSON.stringify({
-          todo: todo.id,
+          todo: updateTodo.id,
           title: randText(),
-          body: todo.body,
-          userId: todo.userId,
+          body: updateTodo.body,
+          userId: updateTodo.userId,
         }),
         {
           headers: {
@@ -32,13 +69,24 @@ export class AppService {
           },
         },
       )
-      .pipe(catchError(this.handleError));
+      .pipe(
+        map((todo) => todo),
+        tap((updateTodo) => {
+          this.todos.update((todos) =>
+            todos.map((t) => (t.id === updateTodo.id ? updateTodo : t)),
+          );
+        }, catchError(this.handleError)),
+      );
   }
 
-  deleteTodo(todo: Todo) {
-    return this.http
-      .delete(`https://jsonplaceholder.typicode.com/todos/${todo.id}`)
-      .pipe(catchError(this.handleError));
+  deleteTodo(deletedTodo: Todo) {
+    return this.http.delete(`${this.todosUrl}/${deletedTodo.id}`).pipe(
+      tap(() => {
+        this.todos.update((todos) =>
+          todos.filter((t) => t.id !== deletedTodo.id),
+        );
+      }, catchError(this.handleError)),
+    );
   }
 
   private handleError(error: HttpErrorResponse) {

@@ -1,11 +1,5 @@
 import { CommonModule } from '@angular/common';
-import {
-  Component,
-  OnInit,
-  WritableSignal,
-  inject,
-  signal,
-} from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { AppService } from './app.service';
 
 export interface Todo {
@@ -28,28 +22,19 @@ export interface Todo {
   `,
   styles: [],
 })
-export class AppComponent implements OnInit {
-  todos: WritableSignal<Todo[]> = signal([]);
-
+export class AppComponent {
   private appService = inject(AppService);
+  todos = this.appService.todos;
 
   ngOnInit(): void {
-    this.appService.getTodos().subscribe((todos) => {
-      this.todos.set(todos);
-    });
+    this.appService.todoList$.subscribe();
   }
 
   update(todo: Todo) {
-    this.appService.updateTodo(todo).subscribe((todoUpdated: Todo) => {
-      this.todos.update((todos) =>
-        todos.map((t) => (t.id === todoUpdated.id ? todoUpdated : t)),
-      );
-    });
+    this.appService.todoUpdatedSubject$$.next(todo);
   }
 
   delete(todo: Todo) {
-    this.appService.deleteTodo(todo).subscribe(() => {
-      this.todos.update((todos) => todos.filter((t) => t.id !== todo.id));
-    });
+    this.appService.todoDeletedSubject$$.next(todo);
   }
 }
